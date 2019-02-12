@@ -1,4 +1,6 @@
 venv/
 jokes/
+jokes_gamle/
 __pycache__
 *.db
+*.sql
