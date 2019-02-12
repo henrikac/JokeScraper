@@ -1,2 +1,4 @@
 venv/
 jokes/
+__pycache__
+*.db
