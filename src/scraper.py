@@ -1,5 +1,7 @@
 from bs4 import BeautifulSoup
+import concurrent.futures as cf
 import requests
+import time
 
 from database import *
 
@@ -7,36 +9,44 @@ from database import *
 db.connect()
 db.create_tables([Joke], safe=True)
 
-jokes_scraped = 0
-req = requests.get('https://www.rd.com/jokes/')
+headers = {
+        'User-Agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5)'
+                        'AppleWebKit/537.36 (KHTML, like Gecko)'
+                        'Chrome/50.0.2661.102 Safari/537.36')
+        }
+req = requests.get('https://www.rd.com/jokes/', headers=headers)
 soup = BeautifulSoup(req.text, 'html.parser')
 
 
 print(f'Status: {req.status_code}')
 
-# get topics
 topic_links = soup.find_all('a', class_='tag-cloud-link')
 
-for topic_link in topic_links:
-  req = requests.get(topic_link['href'])
-  soup = BeautifulSoup(req.text, 'html.parser')
 
-  jokes = soup.find_all('article', class_='joke entry-card fixed-height')
+def scrape_jokes(topic_link):
+    req = requests.get(topic_link['href'], headers=headers)
+    soup = BeautifulSoup(req.text, 'html.parser')
+    return { "topic": topic_link.text, "jokes": soup }
 
-  for joke in jokes:
-    title = joke.find('h2', class_='entry-title').get_text().strip()
-    content = joke.find('div', class_='excerpt-wrapper').get_text().strip()
 
-    add_joke(topic_link.get_text(), title, content)
+with cf.ThreadPoolExecutor() as executor:
+    topic_jokes = executor.map(scrape_jokes, topic_links)
 
-    with open(f'./jokes/{topic_link.get_text()}.txt', 'a') as file:
-      file.write(f'{title}\n')
-      file.write('-' * len(title))
-      file.write(f'\n{content}\n\n')
 
-    jokes_scraped += 1
+for topic in topic_jokes:
+    jokes = topic["jokes"].find_all(
+        'article',
+        class_=('pure-u-1 pure-u-sm-1-2'
+                ' pure-u-lg-1-3 joke entry-card'
+                ' category-card fixed-height')
+    )
 
-print(f'Jokes scraped: {jokes_scraped}')
+    for joke in jokes:
+        title = joke.find('h3', class_='entry-title').text.strip()
+        content = joke.find('div', class_='excerpt-wrapper').text.strip()
+
+        add_joke(topic["topic"], title, content)
+
 
 db.close()
 
